@@ -3,7 +3,6 @@ var jsonfile = require('jsonfile');
 var parseXlsx = require('excel');
 var xlsx = require('node-xlsx');
 var path = require('path');
-
 var file = './data.json';
 var obj = {name:'jp'};
 
@@ -20,7 +19,7 @@ parseXlsx('data.xlsx', function(err, data){
    //var xlsData = xlsx.parse(data);
   //console.log(xlsData);
 //  jsonfile.writeFileSync(file, data, {spaces:2});
-//  console.log(data);
+
 });
 
 
