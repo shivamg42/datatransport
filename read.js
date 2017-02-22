@@ -16,10 +16,6 @@ var readMe = fs.readFile('data.xlsx', function(err, rawData){
 });
 
 parseXlsx('data.xlsx', function(err, data){
-   //var xlsData = xlsx.parse(data);
-  //console.log(xlsData);
-//  jsonfile.writeFileSync(file, data, {spaces:2});
-
 });
 
 
