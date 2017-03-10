@@ -27,11 +27,12 @@ function formatJSON(file){
       eachUser["Email"] = json[0].data[entry][0];
       eachUser["Name"] = json[0].data[entry][1] + " " + json[0].data[entry][2];;
       var attributes = [];
+      var eachAtribute = {};
       for( var i=0; i< json[0].data[entry].length; i++){
-          var eachAtribute = {};
+          //attributes[json[0].data[0][i]] = json[0].data[entry][i];
           eachAtribute[json[0].data[0][i]] = json[0].data[entry][i];
-          attributes.push(eachAtribute);
       }
+      attributes.push(eachAtribute);
       eachUser["Attributes"] = attributes;
       user.push(eachUser);
   }
