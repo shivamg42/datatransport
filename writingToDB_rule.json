@@ -1,0 +1,12 @@
+{
+	"rule": {
+		"connection": [{
+			"db": "db1",
+      "collection" : "user",
+			"user_name": "username",
+			"password": "key",
+			"ip_address": "127.0.0.1",
+			"port": "27017"
+		}]
+	}
+}
