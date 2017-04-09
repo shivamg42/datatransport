@@ -1,0 +1,24 @@
+{
+	"rule": {
+		"connection": [{
+			"db": "db1",
+			"user": "username",
+			"password": "key",
+			"ip_address": "127.0.0.1",
+			"port": "27017"
+		}],
+
+		"db": [{
+			"db1/col1/attributes.ID#/empty": "DB1 IDs",
+			"db2/col1/email/empty": "DB2 Col1 Email",
+			"db3/col1/email/empty": "DB3 Col1 Email",
+			"db1/col2/attributes.Position Number/empty": "DB1 Col2 Position Numbers",
+			"db2/col2/email/empty": "DB2 Col2 Email",
+			"db3/col2/attributes/empty": "DB3 Col2 Attributes",
+			"db1/col3/attributes/empty": "DB1 Col3 Attributes",
+			"db2/col3/email/empty": "DB2 Col3 Email",
+			"db3/col3/username/empty": "DB3 Col3 username"
+
+		}]
+	}
+}
