@@ -15,7 +15,7 @@ function getDBs(exRule, dbs){
     var allCollections =[];
     var allProperties = [];
 
-     //process each line in the rule file
+    //process each line in the rule file
     for(var eachLine in exRule.rule.db[0]){
 
         details = eachLine.split('/');
@@ -57,10 +57,10 @@ function createExcel(output, dbs){
     // Create a new workbook file in current working-path
   var workbook = excelbuilder.createWorkbook('./output/', 'sample.xlsx')
   var columns = output.length;
-
+  var rows = 100;
   var currColumn = 0;
   // To-do : Fix the number of rows
-  var sheet1 = workbook.createSheet('sheet1', 100, columns);
+  var sheet1 = workbook.createSheet('sheet1', columns, rows);
 
     // For each database in db
     for(var eachDB in dbs){
@@ -75,17 +75,21 @@ function createExcel(output, dbs){
             }
             ++currColumn;
             sheet1.set(currColumn, 1, columnName);
-
-            for(var row=0; row<data.length; row++){
-                var string = JSON.stringify(data[row]);
-                string = string.replace(/["\{\}\[\]\']/g, '');
-                var checkString = string.split(":");
-                if(checkString.length == 2){
-                    string = checkString[1];
-                    string = string.replace(/[\']/g,'');
+            // If the filter is not right and data is null, catch exception.
+            try{
+                for(var row=0; row<data.length; row++){
+                    var string = JSON.stringify(data[row]);
+                    string = string.replace(/["\{\}\[\]\']/g, '');
+                    var checkString = string.split(":");
+                    if(checkString.length == 2){
+                        string = checkString[1];
+                        string = string.replace(/[\']/g,'');
+                    }
+                    // +2 beacause  row stats with 0. Row 1 has column header
+                    sheet1.set(currColumn,row+2, string);
                 }
-                // +2 beacause  row stats with 0. Row 1 has column header
-                sheet1.set(currColumn,row+2, string);
+            }catch(err){
+                console.log("Exception while creating excel. " + columnName + " data is null" + err);
             }
         }
 
@@ -121,6 +125,7 @@ exports.exportToExcel = function(file){
             var allDatabaseClosed = function(){
                 openDatabases--;
                 if(openDatabases == 0){
+                    console.log("All database closed. Creating Excel");
                     //console.log(output);
                     createExcel(output, dbs);
                     return;
@@ -129,9 +134,11 @@ exports.exportToExcel = function(file){
 
         MongoClient.connect(connectRule, function(err,db) {
             var thisDatabase = db.s.databaseName;
+            console.log("Conected to " + thisDatabase);
+
             if(err){
                 console.log("Error in connecting to database: " + thisDatabase);
-                throw err;
+                return;
             }
 
             var savesPending = 0;
@@ -145,6 +152,7 @@ exports.exportToExcel = function(file){
                 savesPending--;
                 if(savesPending == 0){
                     db.close();
+                    console.log("Closing " + thisDatabase);
                     allDatabaseClosed();
                 }
             };
@@ -155,7 +163,7 @@ exports.exportToExcel = function(file){
                 db.collection(currCollection, function(err, collection){
                     if(err){
                         console.log("Error in collection");
-                        throw err;
+                        return;
                     }
 
                     var numOfPropInThisCol = dbs[thisDatabase][0][currCollection].length;
@@ -173,25 +181,24 @@ exports.exportToExcel = function(file){
                             currFilter = "";
                         }
 
-                        currFilter = currProperty + "" + currFilter;
                         currFilter = currFilter + "&fields=" + currProperty;
-
                         var query = currFilter;
                         var q = q2m(querystring.parse(query));
-                        collection.find(q.criteria,displayItem, function(err, resultCursor) {
-                            currFilter = resultCursor.cursorState.cmd.query;
-                            currProperty = resultCursor.cursorState.cmd.fields;
+                        q.options.fields["_id"] = false;
 
-                            currProperty  = Object.keys(currProperty)[0];
+                        collection.find(q.criteria,q.options.fields, function(err, resultCursor) {
+
                             var outputObj = {};
                             var formattedData = [];
-                            var thisColumn = getColumn(dbs, thisDatabase, currCollection, currProperty);
+
+                            var currFilter = resultCursor.cursorState.cmd.query;
+                            var currProperty = resultCursor.cursorState.cmd.fields;
+                            var thisColumn = getColumn(export_rule, thisDatabase, currCollection, currProperty, currFilter);
 
                             // Reference from stackoverflow: https://goo.gl/ROAaxU
                             resultCursor.nextObject(function fn(err, item) {
-
                                 if (err){
-                                    console.log("error");
+                                    console.log("error reading cursor" + resultCursor);
                                     return;
                                 }
                                 else if(!item) {
@@ -207,9 +214,11 @@ exports.exportToExcel = function(file){
                             });
 
                             function fnAction(items, callback) {
+                                var interm = [];
                                 for(each in items){
-                                     formattedData.push(items[each]);
+                                    interm.push(items[each]);
                                 }
+                                formattedData.push(interm);
                                 // Check for large data if stackoverflows
                                 return callback();
                             }
@@ -222,12 +231,62 @@ exports.exportToExcel = function(file){
 }
 
 //Get the column name corresponding to thisProperty.
-function getColumn(dbs, thisDatabase, currCollection, currProperty){
-    var thisColumn;
-    for(var line=0 ; line< dbs[thisDatabase][0][currCollection].length ;line++){
-        if(currProperty == dbs[thisDatabase][0][currCollection][line].property){
-            thisColumn = dbs[thisDatabase][0][currCollection][line].columnName;
-            return thisColumn;
+function getColumn(exRule, thisDatabase, currCollection, currProperty, currFilter){
+    var getAllProp = "";
+    var getAllFilter = "";
+    var path;
+
+    //Get property
+    for(var each in currProperty){
+        if(each != "_id"){
+            if(getAllProp != ""){
+                getAllProp += ",";
+            }
+            getAllProp += "" + each ;
         }
     }
+    //console.log(JSON.stringify(currFilter));
+
+    //Get filter
+    if(Object.keys(currFilter).length === 0){
+        getAllFilter = "empty";
+    }
+    else{
+        for(var each in currFilter){
+            if(getAllFilter != ""){
+                getAllFilter += ",";
+            }
+            var first = 1;
+            // Object is when there are arithmetic or logical operators (and, or, >, <)
+            if(typeof(currFilter[each]) == 'object')
+            {
+                 for(var eachFilter in currFilter[each]){
+                    if(first == 1){
+                        getAllFilter += "" + each;
+                        first = 0;
+                    }
+                    else{
+                        getAllFilter += "&" + each;
+                    }
+                    getAllFilter += getSymbolMapping(eachFilter)+ ""+ currFilter[each][eachFilter];
+                }
+            }
+            else{
+                getAllFilter += "" + each + "=" + currFilter[each];
+            }
+        }
+    }
+
+    path = thisDatabase + "/" + currCollection + "/" + getAllProp + "/" + getAllFilter;
+    return exRule.rule.db[0][path];
+}
+
+
+function getSymbolMapping(text){
+    if(text == "$gt")
+        return ">";
+
+    if(text == "$lt")
+        return "<";
+
 }
