@@ -1,7 +1,8 @@
 var fs = require('fs');
 var qs = require('mongo-querystring');
-var querystring = require('querystring')
-var q2m = require('query-to-mongo')
+var querystring = require('querystring');
+var q2m = require('query-to-mongo');
+var myFilter = require('../parser/parseText');
 
 var MongoClient = require('mongodb').MongoClient, format = require('util').format;
 var excelbuilder = require('msexcel-builder');
@@ -81,15 +82,40 @@ function createExcel(output, dbs){
                     var string = JSON.stringify(data[row]);
                     string = string.replace(/["\{\}\[\]\']/g, '');
                     var checkString = string.split(":");
+
+                    // It gets messy if there are more then one column that needs to be displayed,
+                    // and one of them is part of attributes.
                     if(checkString.length == 2){
-                        string = checkString[1];
-                        string = string.replace(/[\']/g,'');
+                        if(data[row].length > 1){
+                            for(var entry=0; entry<data[row].length; entry++){
+                                var string = JSON.stringify(data[row][entry]);
+                                string = string.replace(/["\{\}\[\]\']/g, '');
+                                var checkString = string.split(":");
+                                if(checkString.length == 2){
+                                    string = checkString[1];
+                                }
+                                string = string.replace(/[\']/g,'');
+                                if(entry > 0){
+                                    finalString += ',' + string;
+                                }
+                                else{
+                                    finalString = string;
+                                }
+                            }
+                            string = finalString;
+                        }
+                        else{
+                            string = checkString[1];
+                            string = string.replace(/[\']/g,'');
+                        }
                     }
+
                     // +2 beacause  row stats with 0. Row 1 has column header
                     sheet1.set(currColumn,row+2, string);
                 }
             }catch(err){
                 console.log("Exception while creating excel. " + columnName + " data is null" + err);
+                console.log(output);
             }
         }
 
@@ -105,7 +131,8 @@ function createExcel(output, dbs){
 
 
 exports.exportToExcel = function(file){
-
+    var givenMap = {};
+    var queryMap = {};
     var expRule = fs.readFileSync(file);
     var export_rule = JSON.parse(expRule);
 
@@ -115,31 +142,43 @@ exports.exportToExcel = function(file){
     var index = 0;
     // Get the dbs and collections in JSON format
     getDBs(export_rule, dbs);
-//    console.log(dbs.db1);
+    //console.log(JSON.stringify(export_rule.rule.db[0]));
+    for(var each in export_rule.rule.db[0]){
+        givenMap[each] = export_rule.rule.db[0][each];
+    }
+    //console.log(givenMap);
+
     var openDatabases =  Object.keys(dbs).length;
+//    console.log(JSON.stringify(dbs));
 
     for(var eachDB in dbs){
-        var connectRule = 'mongodb://' + export_rule.rule.connection[0].ip_address + ':' +
-                      export_rule.rule.connection[0].port + '/' + eachDB ;
+        /* Connection rule: [0] - username, [1] - key, [2] - ip , [3] - port number. */
+        try{
+            var connectRule = 'mongodb://' + export_rule.rule.connection[0][eachDB][2]+ ':' +
+                          export_rule.rule.connection[0][eachDB][3] + '/' + eachDB;
 
-            var allDatabaseClosed = function(){
-                openDatabases--;
-                if(openDatabases == 0){
-                    console.log("All database closed. Creating Excel");
-                    //console.log(output);
-                    createExcel(output, dbs);
-                    return;
-                }
-            };
+                var allDatabaseClosed = function(){
+                    openDatabases--;
+                    if(openDatabases == 0){
+                        console.log("All database closed. Creating Excel");
+                        // console.log(JSON.stringify(output));
+                        createExcel(output, dbs);
+                        return;
+                    }
+                };
+        }catch(err){
+            console.log("Error connecting to database. Check the rule file.");
+            continue;
+        }
 
         MongoClient.connect(connectRule, function(err,db) {
-            var thisDatabase = db.s.databaseName;
-            console.log("Conected to " + thisDatabase);
-
             if(err){
                 console.log("Error in connecting to database: " + thisDatabase);
                 return;
             }
+
+            var thisDatabase = db.s.databaseName;
+            console.log("Conected to " + thisDatabase);
 
             var savesPending = 0;
             savesPending = Object.keys(dbs[thisDatabase][0]).length;
@@ -171,6 +210,7 @@ exports.exportToExcel = function(file){
                         var currProperty = dbs[thisDatabase][0][currCollection][eachProperty].property; // 0 - property, 1 -filter
                         var currFilter = dbs[thisDatabase][0][currCollection][eachProperty].filter;
                         //console.log(thisDatabase + " " + currCollection +  " " + currProperty + " " + currFilter);
+                        var currQueryMap = thisDatabase + "/" + currCollection +  "/" + currProperty + "/" + currFilter;
 
                         var displayItem = {};
                         displayItem[currProperty] = 1;  // Sets the field to display
@@ -178,23 +218,35 @@ exports.exportToExcel = function(file){
 
                         // Display the whole column if the filter is empty
                         if(currFilter == "empty"){
-                            currFilter = "";
+                            currFilter = '';
                         }
+
+                        var myQuery = myFilter.parseText(currFilter);
+                        // console.log(JSON.stringify(myQuery));
+                        // console.log('\n');
+                        queryMap[myQuery] = currQueryMap;
 
                         currFilter = currFilter + "&fields=" + currProperty;
                         var query = currFilter;
                         var q = q2m(querystring.parse(query));
                         q.options.fields["_id"] = false;
 
-                        collection.find(q.criteria,q.options.fields, function(err, resultCursor) {
+                        // console.log(q.options.fields);
+                        // console.log('\n');
+                        // console.log(JSON.stringify(q.criteria));
 
+                        collection.find(myQuery, q.options.fields, function(err, resultCursor) {
                             var outputObj = {};
                             var formattedData = [];
 
-                            var currFilter = resultCursor.cursorState.cmd.query;
+                            var thisFilter = resultCursor.cursorState.cmd.query;
                             var currProperty = resultCursor.cursorState.cmd.fields;
-                            var thisColumn = getColumn(export_rule, thisDatabase, currCollection, currProperty, currFilter);
+                            //var thisColumn = getColumn(export_rule, thisDatabase, currCollection, currProperty, thisFilter);
 
+                            var thisColumnInter = queryMap[thisFilter];
+                            var thisColumn = givenMap[thisColumnInter];
+
+                            //console.log("column name is : " + thisColumn);
                             // Reference from stackoverflow: https://goo.gl/ROAaxU
                             resultCursor.nextObject(function fn(err, item) {
                                 if (err){
@@ -232,10 +284,11 @@ exports.exportToExcel = function(file){
 
 //Get the column name corresponding to thisProperty.
 function getColumn(exRule, thisDatabase, currCollection, currProperty, currFilter){
+
     var getAllProp = "";
     var getAllFilter = "";
     var path;
-
+    console.log(currFilter);
     //Get property
     for(var each in currProperty){
         if(each != "_id"){
